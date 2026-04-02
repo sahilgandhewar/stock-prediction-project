@@ -3,8 +3,25 @@ import joblib
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
 from preprocess import load_and_prepare_data
 from tensorflow.keras.models import load_model
+
+# =========================
+# Safe model loader
+# =========================
+def load_safe_model(path, model_type="sklearn"):
+    if not os.path.exists(path):
+        st.warning(f"{path} not found. Using dummy model.")
+        return None
+    try:
+        if model_type == "lstm":
+            return load_model(path, compile=False)
+        else:
+            return joblib.load(path)
+    except:
+        st.warning(f"Error loading {path}")
+        return None
 
 # =========================
 # Page title
@@ -28,15 +45,15 @@ model_choice = st.selectbox(
     ["Linear Regression", "Random Forest", "XGBoost", "LSTM"]
 )
 
-# Load selected model
+# Load model safely
 if model_choice == "Linear Regression":
-    model = joblib.load("models/linear.pkl")
+    model = load_safe_model("models/linear.pkl")
 elif model_choice == "Random Forest":
-    model = joblib.load("models/random_forest.pkl")
+    model = load_safe_model("models/random_forest.pkl")
 elif model_choice == "XGBoost":
-    model = joblib.load("models/xgboost.pkl")
+    model = load_safe_model("models/xgboost.pkl")
 else:
-    model = load_model("models/lstm_model.h5", compile=False)
+    model = load_safe_model("models/lstm_model.h5", "lstm")
 
 # =========================
 # Historical price graph
@@ -57,11 +74,14 @@ st.subheader("Actual vs Predicted Prices")
 
 X_train, X_test, y_train, y_test = load_and_prepare_data()
 
-if model_choice == "LSTM":
-    X_test_model = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-    preds = model.predict(X_test_model)
+if model is not None:
+    if model_choice == "LSTM":
+        X_test_model = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+        preds = model.predict(X_test_model)
+    else:
+        preds = model.predict(X_test)
 else:
-    preds = model.predict(X_test)
+    preds = np.zeros(len(y_test))
 
 plt.figure()
 plt.plot(y_test, label="Actual")
@@ -79,23 +99,29 @@ try:
     rmse_values = {}
 
     for name in ["linear", "random_forest", "xgboost"]:
-        m = joblib.load(f"models/{name}.pkl")
-        p = m.predict(X_test)
-        rmse = np.sqrt(np.mean((y_test - p) ** 2))
-        rmse_values[name] = rmse
+        path = f"models/{name}.pkl"
+        if os.path.exists(path):
+            m = joblib.load(path)
+            p = m.predict(X_test)
+            rmse = np.sqrt(np.mean((y_test - p) ** 2))
+            rmse_values[name] = rmse
 
     # LSTM
-    lstm_model = load_model("models/lstm_model.h5", compile=False)
-    X_test_lstm = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-    p_lstm = lstm_model.predict(X_test_lstm)
-    rmse_lstm = np.sqrt(np.mean((y_test - p_lstm.flatten()) ** 2))
-    rmse_values["lstm"] = rmse_lstm
+    if os.path.exists("models/lstm_model.h5"):
+        lstm_model = load_model("models/lstm_model.h5", compile=False)
+        X_test_lstm = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+        p_lstm = lstm_model.predict(X_test_lstm)
+        rmse_lstm = np.sqrt(np.mean((y_test - p_lstm.flatten()) ** 2))
+        rmse_values["lstm"] = rmse_lstm
 
-    plt.figure()
-    plt.bar(rmse_values.keys(), rmse_values.values())
-    plt.ylabel("RMSE")
-    plt.title("Model Comparison")
-    st.pyplot(plt)
+    if rmse_values:
+        plt.figure()
+        plt.bar(rmse_values.keys(), rmse_values.values())
+        plt.ylabel("RMSE")
+        plt.title("Model Comparison")
+        st.pyplot(plt)
+    else:
+        st.warning("No models available for comparison.")
 
 except:
     st.warning("Train all models to see comparison.")
@@ -115,12 +141,12 @@ for i in range(5):
 if st.button("Predict"):
     arr = np.array(inputs).reshape(1, -1)
 
-    if model_choice == "LSTM":
-        arr = arr.reshape((1, 5, 1))
-
-    prediction = model.predict(arr)
-
-    # safe conversion to considered value
-    pred_value = float(np.array(prediction).flatten()[0])
+    if model is not None:
+        if model_choice == "LSTM":
+            arr = arr.reshape((1, 5, 1))
+        prediction = model.predict(arr)
+        pred_value = float(np.array(prediction).flatten()[0])
+    else:
+        pred_value = 0.0
 
     st.success(f"Predicted next day price: {pred_value:.2f}")
