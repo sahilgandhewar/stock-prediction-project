@@ -4,6 +4,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import sys
+
+# Fix import paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
+
 from preprocess import load_and_prepare_data
 from tensorflow.keras.models import load_model
 
@@ -11,14 +17,16 @@ from tensorflow.keras.models import load_model
 # Safe model loader
 # =========================
 def load_safe_model(path, model_type="sklearn"):
-    if not os.path.exists(path):
+    full_path = os.path.join(BASE_DIR, "..", path)
+
+    if not os.path.exists(full_path):
         st.warning(f"{path} not found. Using dummy model.")
         return None
     try:
         if model_type == "lstm":
-            return load_model(path, compile=False)
+            return load_model(full_path, compile=False)
         else:
-            return joblib.load(path)
+            return joblib.load(full_path)
     except:
         st.warning(f"Error loading {path}")
         return None
@@ -30,9 +38,10 @@ st.title("Stock Price Prediction Dashboard")
 st.subheader("Prediction for AAPL")
 
 # =========================
-# Load data
+# Load data (FIXED PATH)
 # =========================
-data = pd.read_csv("data/AAPL.csv")
+data_path = os.path.join(BASE_DIR, "..", "data", "AAPL.csv")
+data = pd.read_csv(data_path)
 data = data.sort_values("Date")
 
 # =========================
@@ -99,16 +108,16 @@ try:
     rmse_values = {}
 
     for name in ["linear", "random_forest", "xgboost"]:
-        path = f"models/{name}.pkl"
+        path = os.path.join(BASE_DIR, "..", "models", f"{name}.pkl")
         if os.path.exists(path):
             m = joblib.load(path)
             p = m.predict(X_test)
             rmse = np.sqrt(np.mean((y_test - p) ** 2))
             rmse_values[name] = rmse
 
-    # LSTM
-    if os.path.exists("models/lstm_model.h5"):
-        lstm_model = load_model("models/lstm_model.h5", compile=False)
+    lstm_path = os.path.join(BASE_DIR, "..", "models", "lstm_model.h5")
+    if os.path.exists(lstm_path):
+        lstm_model = load_model(lstm_path, compile=False)
         X_test_lstm = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
         p_lstm = lstm_model.predict(X_test_lstm)
         rmse_lstm = np.sqrt(np.mean((y_test - p_lstm.flatten()) ** 2))
